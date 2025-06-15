@@ -1,9 +1,11 @@
 from twisted.internet.protocol import DatagramProtocol
 from twisted.internet import reactor
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from time import sleep
 
 import sys
-
+import os
+import threading
 
 
 def address_to_string(address):
@@ -141,12 +143,32 @@ class Client:
 		self.port = c_port
 		self.received_peer_info = False
 
-if __name__ == '__main__':
-	if len(sys.argv) < 2:
-		print("Usage: ./server.py PORT")
-		sys.exit(1)
 
-	port = int(sys.argv[1])
-	reactor.listenUDP(port, ServerProtocol())
-	print('Listening on *:%d' % (port))
-	reactor.run()
+
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/healthz":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"ok")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def start_http():
+    port = int(os.environ["PORT"])
+    server = HTTPServer(("", port), HealthHandler)
+    server.serve_forever()
+
+if __name__ == "__main__":
+    # 1) HTTP health-check em thread separada
+    threading.Thread(target=start_http, daemon=True).start()
+
+    # 2) UDP listener no mesmo port
+    port = int(os.environ["PORT"])
+    reactor.listenUDP(port, ServerProtocol())
+    print(f"HTTP+UDP listening on port {port}")
+    reactor.run()
